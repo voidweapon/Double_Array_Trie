@@ -57,6 +57,11 @@ namespace Double_Array_Trie.Trie
         /// <returns>匹配到的模式串</returns>
         public List<Match> Search(IEnumerable<TElement> key)
         {
+            if (terminator == null)
+            {
+                throw new ArgumentNullException($"{nameof())} is null");
+            }
+
             TrieNode s = root;
             TrieNode lastMatch = null;
             List<Match> patterns = new List<Match>();
