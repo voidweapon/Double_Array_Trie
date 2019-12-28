@@ -57,7 +57,7 @@ namespace Double_Array_Trie.AhoCorasick
             State temp = null;
             State fail = null;
             Queue<State> queue = new Queue<State>();
-            //第一层节点的fail执行root
+            //第一层节点的fail指向root
             foreach (var key in root.children.Keys)
             {
                 root.children[key].fail = root;
