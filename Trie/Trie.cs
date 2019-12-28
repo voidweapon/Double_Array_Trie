@@ -59,7 +59,7 @@ namespace Double_Array_Trie.Trie
         {
             if (terminator == null)
             {
-                throw new ArgumentNullException($"{nameof())} is null");
+                throw new ArgumentNullException($"{nameof(key)} is null");
             }
 
             TrieNode s = root;
