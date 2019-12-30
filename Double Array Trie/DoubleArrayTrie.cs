@@ -7,15 +7,23 @@ namespace Double_Array_Trie.Double_Array_Trie
     public class DoubleArrayTrie<TElement>
         where TElement : IComparable<TElement>, IEquatable<TElement> //串元素可比较用于排序,可做相等性比较
     {
-        private List<TrieNode> @base = null;
-        private List<int> check = null;
+        private TElement terminator;
+        private List<TrieNode> nodePool = null;
         private AlphabetMap alphabetMap = null;
-        public DoubleArrayTrie(int initalCapaicty, AlphabetMap alphabetMap)
+        private List<TElement> tail = null;
+        public DoubleArrayTrie(int initalCapaicty, TElement terminator, AlphabetMap alphabetMap)
         {
+            this.terminator = terminator;
             this.alphabetMap = alphabetMap;
-            @base = new List<TrieNode>(0);
-            check = new List<int>(0);
+
+            tail = new List<TElement>(initalCapaicty);
+            //tail[0]填充终止符,使得后缀数组从1开始
+            tail.Add(terminator);
+
+            nodePool = new List<TrieNode>(0);
             Resize(initalCapaicty);
+            nodePool[0].@base = 1;
+            nodePool[0].depth = 0;
         }
 
         /// <summary>
@@ -25,37 +33,44 @@ namespace Double_Array_Trie.Double_Array_Trie
         public void AddPattern(IEnumerable<TElement> pattern)
         {
             int s = 0;
-            int t = -1;
-            int parent = -1;
+            int t = int.MinValue;
+            int parent = int.MinValue;
+            Span<TElement> suffix = new Span<TElement>(new List<TElement>(parent).ToArray());
+            int pattern_index = -1;
             foreach (var element in pattern)
             {
+                pattern_index++;
                 int c = GetElementCode(element);
                 t = GetBase(s) + c;
                 parent = Check(t);
 
-                if(parent == s)
-                {
-                    //槽位t已经储存有状态，且来自状态s
-                    continue;
-                }
-
-                if(parent == -1)
+                if(parent == int.MinValue)
                 {
                     ///槽位t为空，储存新状态到槽位t
+                    InsertBranch(s, t, pattern_index);
+                    //将后缀存入后缀数组, 设置t的后缀索引, 模式串添加结束
+                    int tailIndex = AddNewSuffix(suffix.Slice(pattern_index + 1));
+                    SetSuffixIndex(t, tailIndex);
+                    return;
                 }
-                else
+                else if (parent != s)
                 {
                     ///槽位t已经储存有状态, 且不来自状态s，发生冲突
                     int s_newBase = -1;
                     if(!FindFreeSlot(out s_newBase))
                     {
                         //空间不足，分配新的空间
-                        s_newBase = this.@base.Capacity + 1;
-                        Resize(this.@base.Capacity * 2);                
+                        s_newBase = this.nodePool.Capacity + 1;
+                        Resize(this.nodePool.Capacity * 2);                
                     }
-                    
+                    Relocate(s, s_newBase);
+                    t = GetBase(s) + c;
+                    InsertBranch(s, t, pattern_index);
                 }
-
+                else
+                {
+                    //槽位t已经储存有状态，且来自状态s. 不需要插入新节点
+                }
             }
         }
 
@@ -75,8 +90,8 @@ namespace Double_Array_Trie.Double_Array_Trie
         /// <returns></returns>
         private bool FindFreeSlot(out int newBase)
         {
-            newBase = check.IndexOf(-1);
-            return newBase > -1;
+            newBase = nodePool.FindIndex((node)=> { return node.parent == int.MinValue; });
+            return newBase > 0;
         }
 
         /// <summary>
@@ -84,14 +99,12 @@ namespace Double_Array_Trie.Double_Array_Trie
         /// </summary>
         private void Resize(int newCapacity)
         {
-            int oldCapacity = @base.Capacity;
-            @base.Capacity = newCapacity;
-            check.Capacity = newCapacity;
+            int oldCapacity = nodePool.Capacity;
+            nodePool.Capacity = newCapacity;
 
             for (int i = oldCapacity; i < newCapacity; i++)
             {
-                @base.Add(new TrieNode());
-                check.Add(-1);
+                nodePool.Add(new TrieNode());
             }
         }
 
@@ -105,6 +118,14 @@ namespace Double_Array_Trie.Double_Array_Trie
 
         }
 
+        private void InsertBranch(int s, int t, int pattern_index)
+        {
+            this.nodePool[t].@base = this.nodePool[s].@base;
+            this.nodePool[t].parent = s;
+
+            this.nodePool[t].depth = pattern_index;
+        }
+
         private int GetElementCode(TElement element)
         {
             int code = -1;
@@ -114,23 +135,71 @@ namespace Double_Array_Trie.Double_Array_Trie
 
         private int GetBase(int s)
         {
-            return this.@base[s].@base;
+            return this.nodePool[s].@base;
         }
+
+        private int GetSuffixIndex(int s)
+        {
+            return this.nodePool[s].tail;
+        }
+        private void SetSuffixIndex(int s, int tailIndex)
+        {
+            this.nodePool[s].tail = tailIndex;
+        }
+
 
         private int Check(int s)
         {
-            return this.check[s];
+            return this.nodePool[s].parent;
         }
 
-
-
-        internal struct TrieNode
+        #region 后缀相关
+        /// <summary>
+        /// 将<paramref name="pos"/>开始的后缀，从头缩短<paramref name="reduce"/>个
+        /// </summary>
+        /// <param name="pos">旧后缀的开始位置</param>
+        /// <param name="reduce">新后缀</param>
+        private void ReduceSuffix(int pos, int reduce) 
         {
-            public int @base;
+
+        }
+
+        /// <summary>
+        /// 添加新的后缀到后缀数组, 并在结尾添加一个终止符
+        /// </summary>
+        /// <param name="suffix">需要添加的后缀</param>
+        /// <returns>后缀的开始位置</returns>
+        private int AddNewSuffix(Span<TElement> suffix)
+        {
+            int pos = this.tail.Count;
+            foreach (var item in suffix)
+            {
+                this.tail.Add(item);
+            }
+            //添加终止符
+            this.tail.Add(terminator);
+            return pos;
+        }
+        #endregion
+
+        internal class TrieNode
+        {
+            /// <summary>
+            /// 子节点基地址
+            /// </summary>
+            public int @base = int.MinValue;
+            /// <summary>
+            /// 父节点索引
+            /// </summary>
+            public int parent = int.MinValue;
+            /// <summary>
+            /// 尾缀的索引
+            /// </summary>
+            public int tail = int.MinValue;
             /// <summary>
             /// 节点在树中的深度
             /// </summary>
-            public int depth;
+            public int depth = int.MinValue;
         }
 
         public struct Match
