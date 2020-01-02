@@ -6,10 +6,21 @@ namespace Double_Array_Trie
     {
         static void Main(string[] args)
         {
-            var AhoCorasickTest = new AhoCorasick_Test();
-            AhoCorasickTest.Test();
+            DAT_Test();
 
             Console.ReadLine();
+        }
+
+        private static void AC_Test()
+        {
+            var AhoCorasickTest = new AhoCorasick_Test();
+            AhoCorasickTest.Test();
+        }
+
+        private static void DAT_Test()
+        {
+            var dAT_tester = new Double_Array_Trie.DoubleArrayTrie_Test();
+            dAT_tester.Test();
         }
     }
 }

@@ -25,6 +25,77 @@ namespace Double_Array_Trie.Double_Array_Trie
             nodePool[0].depth = 0;
         }
 
+        public void Debug()
+        {
+            StringBuilder alphabetMapInfo = new StringBuilder();
+            StringBuilder nodeInfo = new StringBuilder();
+            StringBuilder tialInfo = new StringBuilder();
+            alphabetMapInfo.Append("Code: ");
+
+            foreach (var key in alphabetMap.elementCodeMap.Keys)
+            {
+                alphabetMapInfo.Append($"{key} \t");
+            }
+            alphabetMapInfo.AppendLine();
+            alphabetMapInfo.Append("Key:  ");
+            foreach (var key in alphabetMap.elementCodeMap.Keys)
+            {
+                alphabetMapInfo.Append($"{alphabetMap.elementCodeMap[key]} \t");
+            }
+
+
+            nodeInfo.AppendLine("===============================================================");
+            nodeInfo.AppendLine("Node");
+            nodeInfo.AppendLine("Index\t\t Code\t\t Base\t\t\t Tail\t\t Check\t\t\t Depth");
+            int i = 0;
+            foreach (var item in this.nodePool)
+            {
+                string tail = "";
+                if(item.tail != int.MinValue)
+                {
+                    var ary = GetSuffix(item.tail).ToArray();
+                    foreach (var a_e in ary)
+                    {
+                        tail += $"{a_e}";
+                    }
+                }
+                nodeInfo.Append($"{i++}\t\t ");
+                nodeInfo.Append($"{item.code}\t\t ");
+                if (item.@base == int.MinValue)
+                {
+                    nodeInfo.Append($"{item.@base}\t\t ");
+                }
+                else
+                {
+                    nodeInfo.Append($"{item.@base}\t\t\t ");
+                }
+                nodeInfo.Append($"{tail}\t\t ");
+                if (item.parent == int.MinValue)
+                {
+                    nodeInfo.Append($"{item.parent}\t\t ");
+                }
+                else
+                {
+                    nodeInfo.Append($"{item.parent}\t\t\t ");
+                }
+                nodeInfo.Append($"{item.depth}");
+                nodeInfo.AppendLine();
+            }
+
+            tialInfo.AppendLine("===============================================================");
+            tialInfo.AppendLine("Tail");
+            tialInfo.AppendLine("Index\t\t Code");
+            i = 0;
+            foreach (var item in this.tail)
+            {
+                tialInfo.AppendLine($"{i++}\t\t {item.ToString()}");
+            }
+
+            Console.WriteLine(alphabetMapInfo);
+            Console.WriteLine(nodeInfo);
+            Console.WriteLine(tialInfo);
+        }
+
         /// <summary>
         /// 查找模式串是否存在
         /// </summary>
@@ -57,7 +128,7 @@ namespace Double_Array_Trie.Double_Array_Trie
                     break;
                 }
 
-                if (IsCompeletePattern(t))
+                if (IsCompeletePattern(t) && str_index == suffix.Length - 1)
                 {
                     matches.Add(new Match
                     {
@@ -74,7 +145,7 @@ namespace Double_Array_Trie.Double_Array_Trie
                         matches.Add(new Match
                         {
                             start = str_index - GetNodeDepth(t),
-                            length = GetNodeDepth(t) + 1,
+                            length = GetNodeDepth(t) + 1 + state_suffix.Length,
                         });
                     }
                     break;
@@ -92,19 +163,19 @@ namespace Double_Array_Trie.Double_Array_Trie
         {
             int s = 0;
             int t = int.MinValue;
+            int c = 0;
             int parent = int.MinValue;
-            Span<TElement> pattern_suffix = new Span<TElement>(new List<TElement>(parent).ToArray());
+            Span<TElement> pattern_suffix = new Span<TElement>(new List<TElement>(pattern).ToArray());
             int pattern_index = -1;
             int prefix_lenght = 0;
             int store_suffix_state = -1;
             foreach (var element in pattern)
             {
                 pattern_index++;
-                int c = GetElementCode(element);
+                c = GetElementCode(element);
                 t = GetBase(s) + c;
                 parent = Check(t);
-
-                t = InsertBranch(s, c, t, pattern_index);
+                t = FindChildSlot(s, c, t, pattern_index, out parent);
 
                 if (parent == int.MinValue)
                 {
@@ -113,69 +184,120 @@ namespace Double_Array_Trie.Double_Array_Trie
 
                 //存在公有前缀
                 prefix_lenght++;
-                if(GetSuffixIndex(s) > 0)
+                if(GetSuffixIndex(t) > 0)
                 {
-                    store_suffix_state = s;
+                    store_suffix_state = t;
                 }
                 s = t;
             }
 
-            
-            if (prefix_lenght == 0)
+            int suffixCommonPrefixLenght = int.MinValue;
+            Span<TElement> store_suffix = null;
+            if (store_suffix_state != -1)
+            {
+                store_suffix = GetSuffix(GetSuffixIndex(store_suffix_state));
+                pattern_suffix = pattern_suffix.Slice(prefix_lenght);
+                suffixCommonPrefixLenght = GetCommonPrefixLenght(store_suffix, pattern_suffix);
+            }
+
+            if (prefix_lenght == 0 || store_suffix_state == -1)
             {
                 //后缀处理, 情况1和情况2: 父节点没有储存后缀, 不会产生后缀冲突
                 //将后缀存入后缀数组, 设置t的后缀索引, 模式串添加结束
-                int tailIndex = AddNewSuffix(pattern_suffix.Slice(pattern_index + 1));
+                ///槽位t为空，储存新状态到槽位t
+                SetupBranch(s, c, t, pattern_index);
+                this.nodePool[t].code = this.alphabetMap.reverse_Map[c];
+
+                int tailIndex = AddNewSuffix(pattern_suffix.Slice(prefix_lenght + 1));
                 SetSuffixIndex(t, tailIndex);
-            }
-            else if(prefix_lenght == pattern_suffix.Length)
-            {
-                //新的模式串是已存在模式串的完整前缀
-                SetStateIsCompeletePattern(s);
+                SetStateIsCompeletePattern(t, true);
             }
             else
             {
-                //后缀处理, 情况3,4:提取公有前缀,把前缀插入Trie, 然后将各自的后缀的第一个一个element插入Trie, 剩余的后缀存入后缀数组,记录后缀索引
-                Span<TElement> store_suffix = GetSuffix(GetSuffixIndex(store_suffix_state)).Slice(prefix_lenght - 1);
-                pattern_suffix = pattern_suffix.Slice(prefix_lenght -1);
+                //后缀处理, 情况3,4:提取公有前缀,把前缀插入Trie, 然后将各自的后缀的第一个element插入Trie, 剩余的后缀存入后缀数组,记录后缀索引
+                Span<TElement> common_prefix = store_suffix.Slice(0, suffixCommonPrefixLenght);
+                store_suffix = store_suffix.Slice(suffixCommonPrefixLenght);
+                pattern_suffix = pattern_suffix.Slice(suffixCommonPrefixLenght);
 
-                int c = GetElementCode(store_suffix[0]);
-                t = GetBase(s) + c;
-                t = InsertBranch(s, c, t, pattern_index + 1);
-                int tailIndex = GetSuffixIndex(store_suffix_state);
-                ReduceSuffix(GetSuffixIndex(store_suffix_state), prefix_lenght);
-                SetSuffixIndex(t, tailIndex);
-                ClearSuffixIndex(store_suffix_state);
+                c = 0;
+                int check = 0;
+                foreach (var element in common_prefix)
+                {
+                    c = GetElementCode(element);
+                    t = GetBase(s) + c;
+                    t = FindChildSlot(s, c, t, pattern_index, out check);
+                    SetupBranch(s, c, t, pattern_index);
+                    this.nodePool[t].code = this.alphabetMap.reverse_Map[c];
+                    s = t;
+                    pattern_index++;
+                }
 
-                c = GetElementCode(pattern_suffix[0]);
-                t = GetBase(s) + c;
-                t = InsertBranch(s, c, t, pattern_index + 1);
-                tailIndex = AddNewSuffix(pattern_suffix.Slice(1));
-                SetSuffixIndex(t, tailIndex);
+                if (pattern_suffix.Length == 0)
+                {
+                    //新的模式串是已存在模式串的完整前缀
+                    SetStateIsCompeletePattern(s, true);
+                    SetSuffixIndex(s, GetSuffixIndex(store_suffix_state));
+                    ReduceSuffix(GetSuffixIndex(store_suffix_state), suffixCommonPrefixLenght);
+                    ClearSuffixIndex(store_suffix_state);
+                }
+                else
+                {
+                    c = GetElementCode(store_suffix[0]);
+                    t = GetBase(s) + c;
+                    t = FindChildSlot(s, c, t, pattern_index, out check);
+                    SetupBranch(s, c, t, pattern_index);
+                    this.nodePool[t].code = this.alphabetMap.reverse_Map[c];
+                    int tailIndex = GetSuffixIndex(store_suffix_state);
+                    ReduceSuffix(GetSuffixIndex(store_suffix_state), suffixCommonPrefixLenght + 1);
+                    SetSuffixIndex(t, tailIndex);
+                    if (tailIndex == int.MinValue)
+                    {
+                        SetStateIsCompeletePattern(t, true);
+                    }
+                    ClearSuffixIndex(store_suffix_state);
+
+                    c = GetElementCode(pattern_suffix[0]);
+                    t = GetBase(s) + c;
+                    t = FindChildSlot(s, c, t, pattern_index, out check);
+                    SetupBranch(s, c, t, pattern_index);
+                    this.nodePool[t].code = this.alphabetMap.reverse_Map[c];
+                    tailIndex = AddNewSuffix(pattern_suffix.Slice(1));
+                    SetSuffixIndex(t, tailIndex);
+                    if(tailIndex == int.MinValue)
+                    {
+                        SetStateIsCompeletePattern(t, true);
+                    }
+                }
             }
+
         }
 
         /// <summary>
         /// 寻找空闲槽位
         /// </summary>
         /// <returns></returns>
-        private bool FindFreeSlot(int s, out int newBase)
+        private bool FindFreeSlot(int s, int c, out int newBase)
         {
-            int index = 0;
+            int index = 1;
+            int t = 0;
             newBase = int.MinValue;
+            List<int> children = new List<int>();
+            children.Add(c);
+            children.AddRange(this.nodePool[s].children);
             while (index < this.nodePool.Count)
             {
                 bool find = true;
-                foreach (var alphaCode in this.nodePool[s].children)
+
+                foreach (var alphaCode in children)
                 {
-                    int t = alphaCode + alphaCode;
-                    if(t >= this.nodePool.Count     //子节点的新位置超出 当前池子容量
-                        ||  Check(t) > 0)           //这个位置已经被使用
+                    t = index + alphaCode;
+                    if (t >= this.nodePool.Count     //子节点的新位置超出 当前池子容量
+                        || Check(t) >= 0)           //这个位置已经被使用
                     {
                         find = false;
-                        break;
                     }
                 }
+
                 if (find)
                 {
                     newBase = index;
@@ -183,7 +305,7 @@ namespace Double_Array_Trie.Double_Array_Trie
                 }
                 index++;
             }
-
+            newBase = t;
             return false;
         }
 
@@ -208,14 +330,17 @@ namespace Double_Array_Trie.Double_Array_Trie
         /// <param name="newbase"></param>
         private void Relocate(int s, int newbase)
         {
+            List<int> newChildren = new List<int>();
             foreach (var alphaCode in this.nodePool[s].children)
             {
                 int t = GetBase(s) + alphaCode;
                 TrieNode temp = this.nodePool[t];
                 this.nodePool[t] = this.nodePool[newbase + alphaCode];
                 this.nodePool[newbase + alphaCode] = temp;
+                newChildren.Add(t);
             }
             this.nodePool[s].@base = newbase;
+            this.nodePool[s].children = newChildren;
         }
         /// <summary>
         /// 
@@ -224,14 +349,23 @@ namespace Double_Array_Trie.Double_Array_Trie
         /// <param name="c">转移</param>
         /// <param name="t">子状态</param>
         /// <param name="pattern_index"></param>
-        private int InsertBranch(int s, int c, int t, int pattern_index)
+        private int FindChildSlot(int s, int c, int t, int pattern_index, out int check)
         {
+            if(t >= this.nodePool.Count)
+            {
+                int capacity = this.nodePool.Capacity * 2;
+                while (capacity < t)
+                {
+                    capacity *= 2;
+                }
+                Resize(capacity);
+            }
+
             int parent = Check(t);
+            check = parent;
 
             if (parent == int.MinValue)
             {
-                ///槽位t为空，储存新状态到槽位t
-                SetupBranch(s, t, pattern_index);
                 return t;
             }
             if (parent != s)
@@ -239,18 +373,25 @@ namespace Double_Array_Trie.Double_Array_Trie
                 ///槽位t已经储存有状态, 且不来自状态s，发生冲突
                 ///冲突解决: 选择s 和 t的parent中 子节点数量较少的一个, 然后寻找一个新的基地址使得 这个节点的所有直接子节点都可以移动到新槽位
                 int newBase = -1;
-                int need_relocate_state = GetChildrenCount(parent) <= (GetChildrenCount(s) + 1) ? s : parent;
-                if (!FindFreeSlot(need_relocate_state, out newBase))
+                int need_relocate_state = GetChildrenCount(parent) <= (GetChildrenCount(s) + 1) ? parent : s;
+                if (!FindFreeSlot(need_relocate_state, c, out newBase))
                 {
-                    //空间不足，分配新的空间
-                    newBase = this.nodePool.Capacity + 1;
-                    Resize(this.nodePool.Capacity * 2);
+                    //空间不足，分配新的空间            
+                    int oldCapacity = this.nodePool.Capacity;
+                    int newCapacity = this.nodePool.Capacity * 2;
+                    while(newCapacity < newBase)
+                    {
+                        newCapacity *= 2;
+                    }
+                    Resize(newCapacity);
+                    newBase = oldCapacity + 1;
                 }
                 Relocate(need_relocate_state, newBase);
 
                 //插入新节点t
                 t = GetBase(s) + c;
-                SetupBranch(s, t, pattern_index);
+                //冲突解决后 t槽位为空
+                check = int.MinValue;
                 return t;
             }
             /*
@@ -262,13 +403,16 @@ namespace Double_Array_Trie.Double_Array_Trie
 
             return t;
         }
-        private void SetupBranch(int s, int t, int pattern_index)
+        private void SetupBranch(int s, int c, int t, int pattern_index)
         {
             this.nodePool[t].@base = this.nodePool[s].@base;
             this.nodePool[t].parent = s;
 
             this.nodePool[t].depth = pattern_index;
+
+            this.nodePool[s].children.Add(c);
         }
+
         /// <summary>
         /// 获取<paramref name="element"/>的编码值，如果<paramref name="element"/>不在码表中则返回-1
         /// </summary>
@@ -291,19 +435,43 @@ namespace Double_Array_Trie.Double_Array_Trie
 
         private int Check(int s)
         {
+            if (s >= this.nodePool.Capacity)
+            {
+                int newCapacity = this.nodePool.Capacity * 2;
+                while (newCapacity < s)
+                {
+                    newCapacity *= 2;
+                }
+                Resize(newCapacity);
+            }
             return this.nodePool[s].parent;
         }
 
+        /// <summary>
+        /// 获取节点<paramref name="s"/>的直接子节点数量
+        /// </summary>
+        /// <param name="s"></param>
+        /// <returns></returns>
         private int GetChildrenCount(int s)
         {
             return this.nodePool[s].children.Count;
 ;       }
 
-        private bool SetStateIsCompeletePattern(int s)
+        /// <summary>
+        /// 设置节点<paramref name="s"/>是一个完成模式串的叶节点
+        /// </summary>
+        /// <param name="s"></param>
+        /// <returns></returns>
+        private bool SetStateIsCompeletePattern(int s, bool enable)
         {
-            return this.nodePool[s].isCompeletePattern = true;
+            return this.nodePool[s].isCompeletePattern = enable;
         }
 
+        /// <summary>
+        /// 节点<paramref name="s"/>是否是一个完成模式串的叶节点
+        /// </summary>
+        /// <param name="s"></param>
+        /// <returns></returns>
         private bool IsCompeletePattern(int s)
         {
             return this.nodePool[s].isCompeletePattern;
@@ -336,9 +504,10 @@ namespace Double_Array_Trie.Double_Array_Trie
         /// <param name="reduce">缩短的个数</param>
         private void ReduceSuffix(int pos, int reduce) 
         {
-            for (int i = 0; i <= 0; i++)
+            for (int i = 0; ; i++)
             {
-                this.tail[pos + reduce + i] = this.tail[pos + i];
+                this.tail[pos + i] = this.tail[pos + reduce + i];
+                if (this.tail[pos + i].Equals(this.terminator)) return;
             }
         }
 
@@ -349,6 +518,8 @@ namespace Double_Array_Trie.Double_Array_Trie
         /// <returns>后缀的开始位置</returns>
         private int AddNewSuffix(Span<TElement> suffix)
         {
+            if (suffix.Length == 0) return int.MinValue;
+
             int pos = this.tail.Count;
             foreach (var item in suffix)
             {
@@ -358,13 +529,23 @@ namespace Double_Array_Trie.Double_Array_Trie
             this.tail.Add(terminator);
             return pos;
         }
-
+        /// <summary>
+        /// 获取从<paramref name="start"/>开始的后缀，不包括终结符
+        /// </summary>
+        /// <param name="start">后缀开始索引</param>
+        /// <returns>后缀</returns>
         private Span<TElement> GetSuffix(int start)
         {
             int end = this.tail.FindIndex(start, (element) => { return element.Equals(terminator); });
-            return new Span<TElement>(this.tail.ToArray(), start, end);
+            //不包括终止符
+            return new Span<TElement>(this.tail.ToArray(), start, end - start);
         }
-
+        /// <summary>
+        /// 比较两个后缀是否相等
+        /// </summary>
+        /// <param name="a"></param>
+        /// <param name="b"></param>
+        /// <returns></returns>
         private bool CompareSuffix(Span<TElement> a, Span<TElement> b)
         {
             if (a.Length != b.Length) return false;
@@ -379,10 +560,29 @@ namespace Double_Array_Trie.Double_Array_Trie
 
             return true;
         }
+        /// <summary>
+        /// 获取两个后缀的公共前缀
+        /// </summary>
+        /// <param name="a"></param>
+        /// <param name="b"></param>
+        /// <returns>后缀的公共前缀</returns>
+        private int GetCommonPrefixLenght(Span<TElement> a, Span<TElement> b)
+        {
+            int length = Math.Min(a.Length, b.Length);
+            for (int i = 0; i < length; i++)
+            {
+                if (!a[i].Equals(b[i]))
+                {
+                    return i ;
+                }
+            }
+            return length;
+        }
         #endregion
 
         internal class TrieNode
         {
+            public TElement code;
             /// <summary>
             /// 子节点基地址
             /// </summary>
@@ -423,6 +623,7 @@ namespace Double_Array_Trie.Double_Array_Trie
         public class AlphabetMap
         {
             public Dictionary<TElement, int> elementCodeMap = new Dictionary<TElement, int>();
+            public Dictionary<int, TElement> reverse_Map = new Dictionary<int, TElement>();
         }
     }
 }
