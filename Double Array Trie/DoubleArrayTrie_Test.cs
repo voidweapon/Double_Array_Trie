@@ -25,6 +25,13 @@ namespace Double_Array_Trie.Double_Array_Trie
             patterns.Add("portacb");
             patterns.Add("portabe");
             patterns.Add("portaeb");
+            patterns.Add("bbc");
+            patterns.Add("bba");
+            patterns.Add("cctv");
+            patterns.Add("abb");
+            patterns.Add("ccc");
+            patterns.Add("hk");
+            patterns.Add("tw");
 
             DoubleArrayTrie<char>.AlphabetMap alphabetMap = new DoubleArrayTrie<char>.AlphabetMap();
             int code = 0;
@@ -46,7 +53,8 @@ namespace Double_Array_Trie.Double_Array_Trie
 
             foreach (var pattern in patterns)
             {
-                doubleArrayTrie.AddPattern(pattern);
+                Span<char> string_ = new Span<char>(pattern.ToCharArray());
+                doubleArrayTrie.AddPattern(string_);
             }
             doubleArrayTrie.Debug();
 
